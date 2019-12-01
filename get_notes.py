@@ -1,5 +1,4 @@
 import glob
-import json
 from music21 import converter, instrument, note, chord
 
 def get_notes():
@@ -20,9 +19,6 @@ def get_notes():
             notes_to_parse = midi.flat.notes
 
         notes.extend(parse_notes(notes_to_parse))
-
-    with open("data/notes.json", "w") as filepath:
-        json.dump(notes, filepath)
 
     return notes
 

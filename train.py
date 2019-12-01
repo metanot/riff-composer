@@ -2,46 +2,49 @@ from get_notes import get_notes
 from model import create_network
 
 import pandas as pd
-from sklearn import preprocessing
-from sklearn.preprocessing import OneHotEncoder
-
 import numpy
+import json
 
 from keras.utils import np_utils
 from keras.callbacks import ModelCheckpoint
 
+
 def train_network():
     notes = get_notes()
 
+    with open("data/notes.json", "w") as filename:
+        json.dump(notes, filename)
+
     notes_df = pd.DataFrame(notes, columns=['pitch', 'duration'])
+
+    pitches = notes_df['pitch']
+    durations = notes_df['duration']
+
+    pitch_vocab = sorted(set(item for item in pitches))
+    duration_vocab = sorted(set(item for item in durations))
+
+    with open("data/pitch_vocab.json", "w") as filename:
+        json.dump(pitch_vocab, filename)
+
+    with open("data/duration_vocab.json", "w") as filename:
+        json.dump(duration_vocab, filename)
 
     # print("notes_df:")
     # print(notes_df)
 
-    in_pitches, in_durations, out_pitches, out_durations = prepare_sequences(notes_df)
+    look_back = 4
 
-    model = create_network(pitches=in_pitches, durations=in_durations)
+    in_pitches, in_durations, out_pitches, out_durations = prepare_sequences(notes_df, look_back)
+
+    model = create_network(timesteps=look_back,
+                           pitch_vocab_size=len(pitch_vocab),
+                           duration_vocab_size=len(duration_vocab))
     model.summary()
 
     train(model, in_pitches, in_durations, out_pitches, out_durations)
 
 
-
-def prepare_sequences(notes):
-    look_back = 4
-
-    lb = preprocessing.LabelBinarizer()
-
-    onehot_encoder = OneHotEncoder(sparse=False)
-
-    # onehot_encoded = onehot_encoder.fit_transform(notes['pitch'])
-
-    # lb.fit(notes['pitch'])
-    # pitches = lb.transform(notes['pitch'])
-    #
-    # lb.fit(notes['duration'])
-    # durations = lb.transform(notes['duration'])
-
+def prepare_sequences(notes, look_back):
     pitches = notes['pitch']
     durations = notes['duration']
 
@@ -57,16 +60,13 @@ def prepare_sequences(notes):
     pitch_to_int = dict((note, number) for number, note in enumerate(pitch_vocab))
     duration_to_int = dict((note, number) for number, note in enumerate(duration_vocab))
 
-    # pitches = np_utils.to_categorical()
-    # durations = np_utils.to_categorical(notes['duration'])
-
     pitches_in = []
     durations_in = []
 
     pitches_out = []
     durations_out = []
 
-    for i in range(len(pitches) - look_back):
+    for i in range(notes.shape[0] - look_back):
         pitch_sequence_in = pitches[i:(i + look_back)]
         pitch_sequence_out = pitches[i + look_back]
 
@@ -84,11 +84,8 @@ def prepare_sequences(notes):
     pitches_out = numpy.array(pitches_out)
     durations_out = numpy.array(durations_out)
 
-    # pitches_in = numpy.reshape(pitches_in, (pitches_in.shape[0], look_back, 1))
-
     pitches_in = np_utils.to_categorical(pitches_in)
     durations_in = np_utils.to_categorical(durations_in)
-
     pitches_out = np_utils.to_categorical(pitches_out)
     durations_out = np_utils.to_categorical(durations_out)
 
@@ -107,7 +104,6 @@ def prepare_sequences(notes):
     return (pitches_in, durations_in, pitches_out, durations_out)
 
 
-
 def train(model, pitch_in, duration_in, pitch_out, duration_out):
     """ train the neural network """
     filepath = "weights/weights-improvement-{epoch:02d}-{loss:.4f}-bigger.hdf5"
@@ -120,7 +116,8 @@ def train(model, pitch_in, duration_in, pitch_out, duration_out):
     )
     callbacks_list = [checkpoint]
 
-    model.fit([pitch_in, duration_in], [pitch_out, duration_out], epochs=100, batch_size=16, callbacks=callbacks_list)
+    model.fit([pitch_in, duration_in], [pitch_out, duration_out], epochs=20, batch_size=16, callbacks=callbacks_list)
+
 
 if __name__ == '__main__':
     train_network()

@@ -1,158 +1,181 @@
-""" This module generates notes for a midi file using the
-    trained neural network """
+from model import create_network
+
+import pandas as pd
 import json
 import numpy
-from music21 import instrument, note, stream, chord, tie
-from keras.models import Sequential
-from keras.layers import Dense
-from keras.layers import Dropout
-from keras.layers import LSTM
-from keras.layers import BatchNormalization as BatchNorm
-from keras.layers import Activation
+from music21 import instrument, note, stream, chord
+from keras.utils import np_utils
+
 
 def generate():
     """ Generate a piano midi file """
-    #load the notes used to train the model
-    with open('data/notes', 'rb') as filepath:
-        notes = json.load(filepath)
+    # load the notes used to train the model
+    with open('data/notes.json', 'r') as filename:
+        notes = json.load(filename)
 
-    # Get all pitch names
-    pitchnames = sorted(set(item for item in notes))
-    # Get all pitch names
-    n_vocab = len(set(notes))
+    with open("data/pitch_vocab.json", "r") as filename:
+        pitch_vocab = json.load(filename)
 
-    network_input, normalized_input = prepare_sequences(notes, pitchnames, n_vocab)
-    model = create_network(normalized_input, n_vocab)
-    prediction_output = generate_notes(model, network_input, pitchnames, n_vocab)
-    create_midi(prediction_output)
+    with open("data/duration_vocab.json", "r") as filename:
+        duration_vocab = json.load(filename)
 
-def prepare_sequences(notes, pitchnames, n_vocab):
-    """ Prepare the sequences used by the Neural Network """
-    # map between notes and integers and back
-    note_to_int = dict((note, number) for number, note in enumerate(pitchnames))
+    look_back = 4
 
-    sequence_length = 16
-    network_input = []
-    output = []
-    for i in range(0, len(notes) - sequence_length, 1):
-        sequence_in = notes[i:i + sequence_length]
-        sequence_out = notes[i + sequence_length]
-        network_input.append([note_to_int[char] for char in sequence_in])
-        output.append(note_to_int[sequence_out])
+    model = create_network(timesteps=look_back,
+                           pitch_vocab_size=len(pitch_vocab),
+                           duration_vocab_size=len(duration_vocab))
 
-    n_patterns = len(network_input)
+    model.load_weights('weights/weights.hdf5')
 
-    # reshape the input into a format compatible with LSTM layers
-    normalized_input = numpy.reshape(network_input, (n_patterns, sequence_length, 1))
-    # normalize input
-    normalized_input = normalized_input / float(n_vocab)
+    model.summary()
 
-    return (network_input, normalized_input)
+    notes_df = pd.DataFrame(notes, columns=['pitch', 'duration'])
+    pitch_samples, duration_samples = prepare_samples(notes_df, pitch_vocab, duration_vocab, look_back)
 
-def create_network(network_input, n_vocab):
-    """ create the structure of the neural network """
-    model = Sequential()
-    model.add(LSTM(
-        512,
-        input_shape=(network_input.shape[1], network_input.shape[2]),
-        recurrent_dropout=0.3,
-        return_sequences=True
-    ))
-    model.add(LSTM(512, return_sequences=True, recurrent_dropout=0.3,))
-    model.add(LSTM(512))
-    model.add(BatchNorm())
-    model.add(Dropout(0.3))
-    model.add(Dense(256))
-    model.add(Activation('relu'))
-    model.add(BatchNorm())
-    model.add(Dropout(0.3))
-    model.add(Dense(n_vocab))
-    model.add(Activation('softmax'))
-    model.compile(loss='categorical_crossentropy', optimizer='rmsprop')
+    print("\npitch_samples:")
+    print(pitch_samples)
 
-    # Load the weights to each node
-    model.load_weights('weights.hdf5')
+    print("\nduration_samples:")
+    print(duration_samples)
 
-    return model
+    pitches, durations = generate_notes(model, pitch_samples, duration_samples, pitch_vocab, duration_vocab, count=16)
 
-def generate_notes(model, network_input, pitchnames, n_vocab):
+    # with open("predicted_pitches.json", "w") as filename:
+    #     json.dump(pitches, filename)
+    #
+    # with open("predicted_durations.json", "w") as filename:
+    #     json.dump(durations, filename)
+
+    # create_midi(pitches, durations)
+
+
+def prepare_samples(notes, pitch_vocab, duration_vocab, look_back):
+    pitches = notes['pitch']
+    durations = notes['duration']
+
+    pitch_to_int = dict((pitch, number) for number, pitch in enumerate(pitch_vocab))
+    duration_to_int = dict((duration, number) for number, duration in enumerate(duration_vocab))
+
+    pitch_samples = []
+    duration_samples = []
+
+    for i in range(notes.shape[0] - look_back):
+        pitch_sequence_in = pitches[i:(i + look_back)]
+        duration_sequence_in = durations[i:(i + look_back)]
+        pitch_samples.append([pitch_to_int[char] for char in pitch_sequence_in])
+        duration_samples.append([duration_to_int[char] for char in duration_sequence_in])
+
+    pitch_samples = numpy.array(pitch_samples)
+    duration_samples = numpy.array(duration_samples)
+
+    pitch_samples = np_utils.to_categorical(pitch_samples)
+    duration_samples = np_utils.to_categorical(duration_samples)
+
+    return pitch_samples, duration_samples
+
+
+def generate_notes(model, pitch_samples, duration_samples, pitch_vocab, duration_vocab, count):
     """ Generate notes from the neural network based on a sequence of notes """
     # pick a random sequence from the input as a starting point for the prediction
-    start = numpy.random.randint(0, len(network_input)-1)
+    start = numpy.random.randint(0, len(pitch_samples) - 1)
 
-    int_to_note = dict((number, note) for number, note in enumerate(pitchnames))
+    int_to_pitch = dict((number, pitch) for number, pitch in enumerate(pitch_vocab))
+    int_to_duration = dict((number, duration) for number, duration in enumerate(duration_vocab))
 
-    pattern = network_input[start]
-    prediction_output = []
+    pitch_sample = pitch_samples[start]
+    duration_sample = duration_samples[start]
 
-    # generate 128 notes
-    for note_index in range(128):
-        prediction_input = numpy.reshape(pattern, (1, len(pattern), 1))
-        prediction_input = prediction_input / float(n_vocab)
+    pitch_sample = numpy.array(pitch_sample)
+    duration_sample = numpy.array(duration_sample)
 
-        prediction = model.predict(prediction_input, verbose=0)
+    # print("\npitch_sample:")
+    # print(pitch_sample)
+    #
+    # print("\nduration_sample:")
+    # print(duration_sample)
 
-        index = numpy.argmax(prediction)
-        result = int_to_note[index]
-        prediction_output.append(result)
+    pitches = []
+    durations = []
 
-        pattern.append(index)
-        pattern = pattern[1:len(pattern)]
+    for note_index in range(count):
+        pitch_sample = numpy.reshape(pitch_sample, (1, pitch_sample.shape[0], 30))
+        duration_sample = numpy.reshape(duration_sample, (1, duration_sample.shape[0], 5))
 
-    return prediction_output
+        print("\npitch_sample:")
+        print(pitch_sample)
 
-def create_midi(prediction_output):
-    """ convert the output from the prediction to notes and create a midi file
-        from the notes """
-    offset = 0
-    output_notes = []
+        print("\nduration_sample:")
+        print(duration_sample)
 
-    # create note and chord objects based on the values generated by the model
-    for pattern in prediction_output:
-        # pattern is a chord
-        if ('.' in pattern) or pattern.isdigit():
-            notes_in_chord = pattern.split('.')
-            notes = []
-            for name in notes_in_chord:
-                new_note = note.Note(name)
-                new_note.storedInstrument = instrument.Piano()
-                notes.append(new_note)
-            new_chord = chord.Chord(notes)
-            new_chord.offset = offset
-            new_chord.duration.quarterLength = 0.25
-            print(new_chord.tie)
-            output_notes.append(new_chord)
-        # pattern is a rest
-        elif('rest' in pattern):
-            new_rest = note.Rest()
-            new_rest.offset = offset
-            new_rest.duration.quarterLength = 0.25
-            new_rest.storedInstrument = instrument.Piano()
-            print(new_rest.tie)
-            output_notes.append(new_rest)
-        # pattern is a tie
-        elif('tie' in pattern):
-            new_note = note.Note()
-#            new_note.tie = tie.Tie('continue')
-            new_note.offset = offset
-            new_note.duration.quarterLength = 0.25
-            tie.storedInstrument = instrument.Piano()
-            output_notes.append(new_note)
-        # pattern is a note
-        else:
-            new_note = note.Note(pattern)
-            new_note.offset = offset
-            new_note.duration.quarterLength = 0.25
-            note.storedInstrument = instrument.Piano()
-            print(new_note.tie)
-            output_notes.append(new_note)
+        predicted_pitch, predicted_duration = model.predict([pitch_sample, duration_sample], batch_size=1, verbose=0)
 
-        # increase offset each iteration so that notes do not stack
-        offset += 0.25
+        pitch_index = numpy.argmax(predicted_pitch)
+        duration_index = numpy.argmax(predicted_duration)
 
-    midi_stream = stream.Stream(output_notes)
+        pitch_name = int_to_pitch[pitch_index]
+        duration_name = int_to_duration[duration_index]
 
-    midi_stream.write('midi', fp='test_output.mid')
+        pitches.append(pitch_name)
+        durations.append(duration_name)
+
+        pitch_sample = numpy.append(pitch_sample[0], predicted_pitch)
+        # pitch_sample = pitch_sample[1:len(pitch_sample)]
+
+        duration_sample = numpy.append(duration_sample[0], predicted_duration)
+        # duration_sample = duration_sample[1:len(duration_sample)]
+
+        # print("\npitch_sample:")
+        # print(pitch_sample)
+        #
+        # print("\nduration_sample:")
+        # print(duration_sample)
+
+    return pitches, durations
+
+
+# def create_midi(pitches, durations):
+#     offset = 0
+#     output_notes = []
+#
+#     # create note and chord objects based on the values generated by the model
+#     for pitch, duration in pitches, durations:
+#         # pattern is a chord
+#         if ('.' in pitch):
+#             notes_in_chord = pitch.split('.')
+#             notes = []
+#             for name in notes_in_chord:
+#                 new_note = note.Note(name)
+#                 new_note.storedInstrument = instrument.Piano()
+#                 notes.append(new_note)
+#             new_chord = chord.Chord(notes)
+#             new_chord.offset = offset
+#             new_chord.duration.quarterLength = 0.25
+#             print(new_chord.tie)
+#             output_notes.append(new_chord)
+#         # pattern is a rest
+#         elif ('rest' in pattern):
+#             new_rest = note.Rest()
+#             new_rest.offset = offset
+#             new_rest.duration.quarterLength = 0.25
+#             new_rest.storedInstrument = instrument.Piano()
+#             print(new_rest.tie)
+#             output_notes.append(new_rest)
+#         # pattern is a note
+#         else:
+#             new_note = note.Note(pattern)
+#             new_note.offset = offset
+#             new_note.duration.quarterLength = 0.25
+#             note.storedInstrument = instrument.Piano()
+#             print(new_note.tie)
+#             output_notes.append(new_note)
+#
+#         # increase offset each iteration so that notes do not stack
+#         offset += 0.25
+#
+#     midi_stream = stream.Stream(output_notes)
+#
+#     midi_stream.write('midi', fp='output.mid')
+
 
 if __name__ == '__main__':
     generate()
