@@ -3,13 +3,15 @@
 
 import pathlib
 import glob
+import pickle
 from music21 import converter, instrument, note, chord
 
 # Getting notes for parsing
-def getNotes(midiFiles):
+def getNotes(midiFolder):
+    print (f"getNotes: Received {midiFolder} as path for midi files")
     notes = []
 
-    for file in midiFiles.absolute().glob('*.mid'):
+    for file in midiFolder.absolute().glob('*.mid'):
         print("Parsing %s" % file)
         midi = converter.parse(file)
         notesToParse = None
@@ -20,6 +22,11 @@ def getNotes(midiFiles):
         except:  # file has notes in a flat structure
             notesToParse = midi.flat.notes
         notes.extend(parseNotes(notesToParse))
+
+#Unusable piece of code - rework
+#    with open('data/notes', 'wb') as filepath:
+#        pickle.dump(notes, filepath)
+
     return notes
 
 # Parsing notes to input data according with single notes, chords, or something else
