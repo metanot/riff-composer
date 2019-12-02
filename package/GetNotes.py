@@ -1,55 +1,54 @@
+# Functions for converting raw midi files
+# to input data for neural network
+
+import pathlib
 import glob
 from music21 import converter, instrument, note, chord
 
-def get_notes():
-    """ Get all the notes and chords from the midi files in the ./midi_songs directory """
+# Getting notes for parsing
+def getNotes(midiFiles):
     notes = []
 
-    for file in glob.glob("rammstein/*.mid*"):
-        midi = converter.parse(file)
-
+    for file in midiFiles.absolute().glob('*.mid'):
         print("Parsing %s" % file)
-
-        notes_to_parse = None
+        midi = converter.parse(file)
+        notesToParse = None
 
         try:  # file has instrument parts
             s2 = instrument.partitionByInstrument(midi)
-            notes_to_parse = s2.parts[0].recurse()
+            notesToParse = s2.parts[0].recurse()
         except:  # file has notes in a flat structure
-            notes_to_parse = midi.flat.notes
-
-        notes.extend(parse_notes(notes_to_parse))
-
+            notesToParse = midi.flat.notes
+        notes.extend(parseNotes(notesToParse))
     return notes
 
-
-def parse_notes(notes_to_parse):
+# Parsing notes to input data according with single notes, chords, or something else
+def parseNotes(notesToParse):
     notes = []
 
-    for element in notes_to_parse:
+    for element in notesToParse:
         if isinstance(element, note.Note):
-            notes.append(parse_note(element))
+            notes.append(parseNote(element))
         elif isinstance(element, chord.Chord):
-            notes.append(parse_chord(element))
+            notes.append(parseChord(element))
         elif isinstance(element, note.Rest):
-            notes.append(parse_rest(element))
-
+            notes.append(parseRest(element))
     return notes
 
-
-def parse_note(element):
+# Single-note parsing for parseNotes()
+def parseNote(element):
     pitch = str(element.pitch)
     duration = element.duration.type
     return [pitch, duration]
 
-
-def parse_chord(element):
+# Chord parsing for parseNotes()
+def parseChord(element):
     pitch = '.'.join(str(n.pitch) for n in element.notes)
     duration = element.duration.type
     return [pitch, duration]
 
-
-def parse_rest(element):
+# Other miscellaneous parsing for parseNotes()
+def parseRest(element):
     pitch = element.name
     duration = element.duration.type
     return [pitch, duration]
