@@ -7,11 +7,14 @@ import os
 from pathlib import Path
 from packages.GetNotes import getNotes
 
-midiBaseDir = Path(__file__).resolve().parent
-midiFolder = midiBaseDir.joinpath('midiFolder/')
+baseDir = Path(__file__).resolve().parent
+midiFolder = baseDir.joinpath('midiFolder/')
+rawParsedDataDir = baseDir.joinpath('rawParsedData/')
+print ("main: Setting data directories:")
+print (f"    main: Setting midi directory to {midiFolder}")
+print (f"    main: Setting raw parsed data directory to {rawParsedDataDir}")
 
-print (f"main: Setting midiFolder variable to {midiFolder}")
 
 # Test run for getNotes()
-getNotes(midiFolder)
+getNotes(midiFolder, rawParsedDataDir)
 

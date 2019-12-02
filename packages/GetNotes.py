@@ -7,7 +7,7 @@ import pickle
 from music21 import converter, instrument, note, chord
 
 # Getting notes for parsing
-def getNotes(midiFolder):
+def getNotes(midiFolder, rawParsedDataDir):
     print (f"getNotes: Received {midiFolder} as path for midi files")
     notes = []
 
@@ -24,8 +24,10 @@ def getNotes(midiFolder):
         notes.extend(parseNotes(notesToParse))
 
 #Unusable piece of code - rework
-#    with open('data/notes', 'wb') as filepath:
-#        pickle.dump(notes, filepath)
+    print (f"Writing parsed data to {rawParsedDataDir}/notes")
+    rawParsedDataDest = rawParsedDataDir.joinpath('rawParsedNotes')
+    with open(rawParsedDataDest, 'wb') as filepath:
+        pickle.dump(notes, filepath)
 
     return notes
 
