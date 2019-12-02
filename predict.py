@@ -88,6 +88,9 @@ def generate_notes(model, pitch_samples, duration_samples, pitch_vocab, duration
     pitch_sample = numpy.array(pitch_sample)
     duration_sample = numpy.array(duration_sample)
 
+    pitch_sample = numpy.reshape(pitch_sample, (1, pitch_sample.shape[0], len(pitch_vocab)))
+    duration_sample = numpy.reshape(duration_sample, (1, duration_sample.shape[0], len(duration_vocab)))
+
     # print("\npitch_sample:")
     # print(pitch_sample)
     #
@@ -98,16 +101,7 @@ def generate_notes(model, pitch_samples, duration_samples, pitch_vocab, duration
     durations = []
 
     for note_index in range(count):
-        pitch_sample = numpy.reshape(pitch_sample, (1, pitch_sample.shape[0], 30))
-        duration_sample = numpy.reshape(duration_sample, (1, duration_sample.shape[0], 5))
-
-        print("\npitch_sample:")
-        print(pitch_sample)
-
-        print("\nduration_sample:")
-        print(duration_sample)
-
-        predicted_pitch, predicted_duration = model.predict([pitch_sample, duration_sample], batch_size=1, verbose=0)
+        predicted_pitch, predicted_duration = model.predict([pitch_sample, duration_sample], verbose=0)
 
         pitch_index = numpy.argmax(predicted_pitch)
         duration_index = numpy.argmax(predicted_duration)
@@ -118,17 +112,21 @@ def generate_notes(model, pitch_samples, duration_samples, pitch_vocab, duration
         pitches.append(pitch_name)
         durations.append(duration_name)
 
-        pitch_sample = numpy.append(pitch_sample[0], predicted_pitch)
+        predicted_pitch = np_utils.to_categorical(pitch_index, num_classes=len(pitch_vocab))
+        predicted_duration = np_utils.to_categorical(duration_index, num_classes=len(duration_vocab))
+
+        predicted_pitch = numpy.reshape(predicted_pitch, (1, 1, len(pitch_vocab)))
+        predicted_duration = numpy.reshape(predicted_duration, (1, 1, len(duration_vocab)))
+
+        pitch_sample = numpy.append(pitch_sample, predicted_pitch)
         # pitch_sample = pitch_sample[1:len(pitch_sample)]
 
-        duration_sample = numpy.append(duration_sample[0], predicted_duration)
+        print("")
+
+        duration_sample = numpy.append(duration_sample, predicted_duration)
         # duration_sample = duration_sample[1:len(duration_sample)]
 
-        # print("\npitch_sample:")
-        # print(pitch_sample)
-        #
-        # print("\nduration_sample:")
-        # print(duration_sample)
+        print("")
 
     return pitches, durations
 
